@@ -26,8 +26,6 @@ class YoutubeDownloader:
 
             print(f'({yd.get_best_video().resolution}, {yd.get_best_audio().abr}) [{r.title}]')
 
-
-
     def get_best_audio(self):
         # get best audio bit rate
         return self.yt.streams.filter(adaptive=True).order_by('abr').desc().first()
@@ -53,7 +51,7 @@ class YoutubeDownloader:
 if __name__ == '__main__':
 
     yd = YoutubeDownloader()
-    yd.search(search_query='nicki minaj')
+    yd.search(search_query='test')
 
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
