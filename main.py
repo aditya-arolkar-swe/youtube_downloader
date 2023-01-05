@@ -1,5 +1,7 @@
 #
-# Basic python youtube downloader using pytube and ffmpeg for audio + video merging 0 - to achieve the best resolution
+# Basic python youtube downloader using pytube to import the youtube streams and using ffmpeg to merge the highest
+# average bit rate audio streams with the highest resolution DASH video stream. Implements basic search function and can
+# download a partial or an entire playlist at one go
 #
 import os
 import time
