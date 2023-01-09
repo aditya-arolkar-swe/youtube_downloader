@@ -63,8 +63,12 @@ class YoutubeDownloader:
             try:
                 self.yt = YouTube(url)
             except VideoUnavailable:
-                print(f' [ERROR] video {url} is unavailable! Please try another youtube URL...')
-                sys.exit(1)
+                print(f' [ERROR] video {url} is unavailable! Might be a private video. Trying to log in...')
+                try:
+                    self.yt = YouTube(url, use_oauth=True, allow_oauth_cache=True)
+                except VideoUnavailable:
+                    print(f' [ERROR] video {url} is unavailable! Exiting...')
+                    sys.exit(1)
 
     def get_title(self):
         return self.yt.title
@@ -84,7 +88,7 @@ class YoutubeDownloader:
         print(f'[{list_num}]  -  {self.get_video_length()}     ({self.get_best_video().resolution}, '
               f'{self.get_best_audio().abr})     {self.get_title()}')
 
-    def download_best_resolution(self, force_download: bool = False):
+    def download_best_resolution(self, force_download: bool = False, output_dir: str = None):
         # query audio and video stream, then merge them with ffmpeg
         best_audio = self.get_best_audio()
         best_video = self.get_best_video()
@@ -97,7 +101,7 @@ class YoutubeDownloader:
             best_video.download(filename="temp/video.mp4")
             audio = ffmpeg.input("temp/audio.mp3")
             video = ffmpeg.input("temp/video.mp4")
-            output_dir = 'downloads'
+            output_dir = f'downloads/{output_dir}' if output_dir else 'downloads'
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
             output_fname = f"{output_dir}/{self.yt.title}.mp4"
@@ -143,7 +147,7 @@ class YoutubePlaylistDownloader:
         print(f'Downloading ({len(final_chosen)} videos): {[v.get_title() for v in final_chosen]}')
         for yd in final_chosen:
             try:
-                yd.download_best_resolution(force_download=True)
+                yd.download_best_resolution(force_download=True, output_dir=self.playlist.title)
             except Exception:
                 print(f' [ERROR] failed to download "{yd.get_title()}" with traceback: ')
                 print(traceback.format_exc())
