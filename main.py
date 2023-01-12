@@ -9,14 +9,16 @@ import sys
 import time
 import traceback
 import ffmpeg
+import tqdm
 from pytube import YouTube, Search, Playlist
 from pytube.exceptions import VideoUnavailable
 from utils import user_allows, enforce_options, print_dict
 
 
-def search_youtube(search_query: str = None, search_list_length: int = 5) -> YouTube:
+def search_youtube(search_query: str = None, search_list_length: int = 5, use_oauth: bool = True) -> YouTube:
     """
     Searches youtube for the video you want, and returns the appropriate "YouTube" object for the video
+    :param use_oauth:
     :param search_query: (optional) you can pre-select your search query - prompts the user otherwise
     :param search_list_length: (optional) can set the length of each page of the search list
     :return: "YouTube object" of the selected video
@@ -31,8 +33,11 @@ def search_youtube(search_query: str = None, search_list_length: int = 5) -> You
         if i == len(s.results) - 1:
             s.get_next_results()
         count += 1
+        yd = YoutubeDownloader(yt=r, sign_in=use_oauth)
+        if yd.is_live_stream():
+            print(f'  (skipping [{i}] "{yd.get_title()}" because it is a live stream...)   ')
+            continue
         video_to_downloader[i] = r
-        yd = YoutubeDownloader(yt=r)
         yd.print_video_info(list_num=i)
         if count >= search_list_length:
             user_input = input(f'Select a video number to download OR enter "next" to see the next {search_list_length}'
@@ -52,16 +57,18 @@ class YoutubeDownloader:
     """
     Stores all variables for a given youtube video and assists in the download process
     """
-    def __init__(self, url: str = None, yt: YouTube = None, search_mode: bool = False):
+    def __init__(self, url: str = None, yt: YouTube = None, search_mode: bool = False, sign_in: bool = False):
         if yt:
             self.yt = yt
+            self.yt.use_oauth = sign_in
+            self.yt.allow_oauth_cache = sign_in
         elif search_mode:
-            self.yt = search_youtube()
+            self.yt = search_youtube(use_oauth=sign_in)
         else:
             if not url:
                 url = input('Please enter the youtube URL: ')
             try:
-                self.yt = YouTube(url)
+                self.yt = YouTube(url, use_oauth=sign_in, allow_oauth_cache=sign_in)
             except VideoUnavailable:
                 print(f' [ERROR] video {url} is unavailable! Might be a private video. Trying to log in...')
                 try:
@@ -69,6 +76,17 @@ class YoutubeDownloader:
                 except VideoUnavailable:
                     print(f' [ERROR] video {url} is unavailable! Exiting...')
                     sys.exit(1)
+
+    def attempt_authenticate_yt(self):
+        print('Attempting to sign in to youtube...')
+        self.yt = YouTube(self.yt.watch_url, use_oauth=True, allow_oauth_cache=True)
+        print('Sign in succeeded!')
+
+    def is_live_stream(self):
+        return self.get_vid_info()['videoDetails']['isLiveContent']
+
+    def get_vid_info(self):
+        return self.yt.vid_info
 
     def get_title(self):
         return self.yt.title
@@ -84,12 +102,24 @@ class YoutubeDownloader:
         # get best resolution DASH video stream
         return self.yt.streams.filter(adaptive=True).order_by('resolution').desc().first()
 
-    def print_video_info(self, list_num: int = 0):
-        print(f'[{list_num}]  -  {self.get_video_length()}     ({self.get_best_video().resolution}, '
-              f'{self.get_best_audio().abr})     {self.get_title()}')
+    def print_video_info(self, list_num: int = 0, include_traceback: bool = False):
+        succeeded = False
+        while not succeeded:
+            try:
+                print(f'[{list_num}]  -  {self.get_video_length()}     ({self.get_best_video().resolution}, '
+                      f'{self.get_best_audio().abr})     {self.get_title()}')
+                succeeded = True
+            except Exception as e:
+                print(f' [ERROR] Failed to get video info with error {e} on "{self.get_title()}"!')
+                print('Playability status: ', self.get_playability_status())
+                self.attempt_authenticate_yt()
+                if include_traceback:
+                    print('Traceback: ', traceback.format_exc())
+                succeeded = False
 
     def download_best_resolution(self, force_download: bool = False, output_dir: str = None):
         # query audio and video stream, then merge them with ffmpeg
+        self.print_video_info()
         best_audio = self.get_best_audio()
         best_video = self.get_best_video()
 
@@ -97,10 +127,14 @@ class YoutubeDownloader:
                        f'Video resolution ({best_video.resolution}): {best_video} \n '
                        f'Audio resolution ({best_audio.abr}): {best_audio}'):
             start = time.time()
-            best_audio.download(filename="temp/audio.mp3")
-            best_video.download(filename="temp/video.mp4")
-            audio = ffmpeg.input("temp/audio.mp3")
-            video = ffmpeg.input("temp/video.mp4")
+            if not os.path.exists('temp'):
+                os.makedirs('temp')
+            audio_fname = f"temp/{self.get_title()}_audio.mp3"
+            video_fname = f"temp/{self.get_title()}_video.mp4"
+            best_audio.download(filename=audio_fname)
+            best_video.download(filename=video_fname)
+            audio = ffmpeg.input(audio_fname)
+            video = ffmpeg.input(video_fname)
             output_dir = f'downloads/{output_dir}' if output_dir else 'downloads'
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
@@ -112,6 +146,10 @@ class YoutubeDownloader:
             print(f'  ===  DOWNLOAD COMPLETE  ===  ')
             self.print_video_info()
             print(f'Saved to "{output_fname}". Time taken: {round(end - start)} seconds')
+
+    def get_playability_status(self):
+        p = self.get_vid_info()['playabilityStatus']
+        return {'status': p['status'], 'reason': p['reason'], 'reasonTitle': p['reasonTitle']}
 
 
 class YoutubePlaylistDownloader:
@@ -128,12 +166,17 @@ class YoutubePlaylistDownloader:
         video_to_downloader = {}
         for i, video in enumerate(self.playlist):
             yd = YoutubeDownloader(video)
-            video_to_downloader[i] = yd
             yd.print_video_info(list_num=i)
-        user_input = input('Which videos do you want to download? '
-                           'enter comma delimited list to specify or "all" for all videos: ')
+            video_to_downloader[i] = {'downloader': yd, 'resolution': yd.get_best_video().resolution}
+        user_input = input('Which videos do you want to download? enter comma delimited list to specify OR "all" for '
+                           'all videos OR "resolution" to filter for certain resolutions: ')
         if 'all' in user_input:
             chosen_videos = range(len(self.playlist))
+        elif 'resolution' in user_input:
+            resolutions = list(set([info['resolution'] for info in video_to_downloader.values()]))
+            print('What resolution would you like to filter for?')
+            user_input = enforce_options(resolutions)
+            chosen_videos = [i for i, info in video_to_downloader.items() if info['resolution'] == user_input]
         else:
             chosen_videos = [int(i) for i in user_input.split(', ')]
 
@@ -144,12 +187,13 @@ class YoutubePlaylistDownloader:
             else:
                 final_chosen.append(video_to_downloader[c])
 
-        print(f'Downloading ({len(final_chosen)} videos): {[v.get_title() for v in final_chosen]}')
-        for yd in final_chosen:
+        print(f"Downloading ({len(final_chosen)} videos): {[v['downloader'].get_title() for v in final_chosen]}")
+        for video_info in tqdm.tqdm(final_chosen):
+            yd = video_info['downloader']
             try:
                 yd.download_best_resolution(force_download=True, output_dir=self.playlist.title)
-            except Exception:
-                print(f' [ERROR] failed to download "{yd.get_title()}" with traceback: ')
+            except Exception as e:
+                print(f' [ERROR] {e}. failed to download "{yd.get_title()}" with traceback: ')
                 print(traceback.format_exc())
 
 
@@ -175,6 +219,9 @@ def youtube_downloader_ui():
     elif user_input == 3:
         ypd = YoutubePlaylistDownloader()
         ypd.download()
+
+    # clearing temporary cache of separate audio and video files after operations
+    os.remove('temp')
 
 
 if __name__ == '__main__':
