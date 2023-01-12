@@ -1,5 +1,5 @@
 #
-# Basic python youtube downloader using pytube to import the youtube streams and using ffmpeg to merge the highest
+# Basic python YouTube downloader using pytube to import the YouTube streams and using ffmpeg to merge the highest
 # average bit rate audio streams with the highest resolution DASH video stream. Implements basic search function and can
 # download a partial or an entire playlist at one go
 #
@@ -17,7 +17,7 @@ from utils import user_allows, enforce_options, print_dict
 
 def search_youtube(search_query: str = None, search_list_length: int = 5, use_oauth: bool = True) -> YouTube:
     """
-    Searches youtube for the video you want, and returns the appropriate "YouTube" object for the video
+    Searches YouTube for the video you want, and returns the appropriate "YouTube" object for the video
     :param use_oauth:
     :param search_query: (optional) you can pre-select your search query - prompts the user otherwise
     :param search_list_length: (optional) can set the length of each page of the search list
@@ -29,15 +29,15 @@ def search_youtube(search_query: str = None, search_list_length: int = 5, use_oa
     video_to_downloader = {}
     user_input = None
     count = 0
-    for i, r in enumerate(s.results):
+    for i, yt in enumerate(s.results):
         if i == len(s.results) - 1:
             s.get_next_results()
         count += 1
-        yd = YoutubeDownloader(yt=r, sign_in=use_oauth)
+        yd = YoutubeDownloader(yt=yt, sign_in=use_oauth)
         if yd.is_live_stream():
-            print(f'  (skipping [{i}] "{yd.get_title()}" because it is a live stream...)   ')
+            print(f' [ALERT] skipping [{i}] "{yd.get_title()}" because it is a live stream... ')
             continue
-        video_to_downloader[i] = r
+        video_to_downloader[i] = yt
         yd.print_video_info(list_num=i)
         if count >= search_list_length:
             user_input = input(f'Select a video number to download OR enter "next" to see the next {search_list_length}'
@@ -55,7 +55,7 @@ def search_youtube(search_query: str = None, search_list_length: int = 5, use_oa
 
 class YoutubeDownloader:
     """
-    Stores all variables for a given youtube video and assists in the download process
+    Stores all variables for a given YouTube video and assists in the download process
     """
     def __init__(self, url: str = None, yt: YouTube = None, search_mode: bool = False, sign_in: bool = False):
         if yt:
@@ -70,17 +70,18 @@ class YoutubeDownloader:
             try:
                 self.yt = YouTube(url, use_oauth=sign_in, allow_oauth_cache=sign_in)
             except VideoUnavailable:
-                print(f' [ERROR] video {url} is unavailable! Might be a private video. Trying to log in...')
-                try:
-                    self.yt = YouTube(url, use_oauth=True, allow_oauth_cache=True)
-                except VideoUnavailable:
-                    print(f' [ERROR] video {url} is unavailable! Exiting...')
-                    sys.exit(1)
+                print(f' [ERROR] video {url} is unavailable! Might be a restricted video...')
+                self.attempt_sign_in(url=url)
 
-    def attempt_authenticate_yt(self):
-        print('Attempting to sign in to youtube...')
-        self.yt = YouTube(self.yt.watch_url, use_oauth=True, allow_oauth_cache=True)
-        print('Sign in succeeded!')
+    def attempt_sign_in(self, url: str = None):
+        print(' [ALERT] Attempting to sign in to YouTube...')
+        try:
+            self.yt = YouTube(url if url else self.yt.watch_url, use_oauth=True, allow_oauth_cache=True)
+            print(' [SUCCEEDED] Sign in succeeded!')
+        except VideoUnavailable as e:
+            print(f' [ERROR] {e} video {url} is unavailable! Exiting...')
+            print('Traceback: ', traceback.format_exc())
+            sys.exit(1)
 
     def is_live_stream(self):
         return self.get_vid_info()['videoDetails']['isLiveContent']
@@ -89,7 +90,8 @@ class YoutubeDownloader:
         return self.yt.vid_info
 
     def get_title(self):
-        return self.yt.title
+        # removes any '/'s to not confuse the filename with a new directory in the os outputs
+        return self.yt.title.replace('/', '')
 
     def get_video_length(self):
         return str(datetime.timedelta(seconds=self.yt.length))
@@ -112,7 +114,7 @@ class YoutubeDownloader:
             except Exception as e:
                 print(f' [ERROR] Failed to get video info with error {e} on "{self.get_title()}"!')
                 print('Playability status: ', self.get_playability_status())
-                self.attempt_authenticate_yt()
+                self.attempt_sign_in()
                 if include_traceback:
                     print('Traceback: ', traceback.format_exc())
                 succeeded = False
@@ -124,28 +126,28 @@ class YoutubeDownloader:
         best_video = self.get_best_video()
 
         if force_download or user_allows(f'Would you like to download this stream for "{self.get_title()}"?\n '
-                       f'Video resolution ({best_video.resolution}): {best_video} \n '
-                       f'Audio resolution ({best_audio.abr}): {best_audio}'):
+                                         f'Video resolution ({best_video.resolution}): {best_video} \n '
+                                         f'Audio resolution ({best_audio.abr}): {best_audio}'):
             start = time.time()
             if not os.path.exists('temp'):
                 os.makedirs('temp')
-            audio_fname = f"temp/{self.get_title()}_audio.mp3"
-            video_fname = f"temp/{self.get_title()}_video.mp4"
-            best_audio.download(filename=audio_fname)
-            best_video.download(filename=video_fname)
-            audio = ffmpeg.input(audio_fname)
-            video = ffmpeg.input(video_fname)
+            audio_filename = f"temp/{self.get_title()}_audio.mp3"
+            video_filename = f"temp/{self.get_title()}_video.mp4"
+            best_audio.download(filename=audio_filename)
+            best_video.download(filename=video_filename)
+            audio = ffmpeg.input(audio_filename)
+            video = ffmpeg.input(video_filename)
             output_dir = f'downloads/{output_dir}' if output_dir else 'downloads'
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            output_fname = f"{output_dir}/{self.yt.title}.mp4"
-            output_fname = ''.join(char for char in output_fname if ord(char) < 128)
-            ffmpeg.output(audio, video, output_fname).run(overwrite_output=True)
+            output_filename = f"{output_dir}/{self.get_title()}.mp4"
+            output_filename = ''.join(char for char in output_filename if ord(char) < 128)
+            ffmpeg.output(audio, video, output_filename).run(overwrite_output=True)
             end = time.time()
 
             print(f'  ===  DOWNLOAD COMPLETE  ===  ')
             self.print_video_info()
-            print(f'Saved to "{output_fname}". Time taken: {round(end - start)} seconds')
+            print(f'Saved to "{output_filename}". Time taken: {round(end - start)} seconds')
 
     def get_playability_status(self):
         p = self.get_vid_info()['playabilityStatus']
@@ -154,7 +156,7 @@ class YoutubeDownloader:
 
 class YoutubePlaylistDownloader:
     """
-    Stores all variables for a given youtube playlist and assists in the download of some or all videos in the playlist
+    Stores all variables for a given YouTube playlist and assists in the download of some or all videos in the playlist
     """
     def __init__(self, url: str = None):
         if not url:
@@ -197,9 +199,16 @@ class YoutubePlaylistDownloader:
                 print(traceback.format_exc())
 
 
+def clear_cache(cache_dir: str = 'temp'):
+    # clearing temporary cache of separate audio and video files
+    for f in os.listdir(cache_dir):
+        os.remove(os.path.join(cache_dir, f))
+    os.rmdir(cache_dir)
+
+
 def youtube_downloader_ui():
     """
-    simple UI to assist a user in downloading a youtube video
+    simple UI to assist a user in downloading a YouTube video
     :return:
     """
     print('=' * 20 + ' PYTHON HIGH RESOLUTION YOUTUBE DOWNLOADER ' + '=' * 20)
@@ -220,8 +229,7 @@ def youtube_downloader_ui():
         ypd = YoutubePlaylistDownloader()
         ypd.download()
 
-    # clearing temporary cache of separate audio and video files after operations
-    os.remove('temp')
+    clear_cache()
 
 
 if __name__ == '__main__':
