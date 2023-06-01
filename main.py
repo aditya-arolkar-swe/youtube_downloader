@@ -10,7 +10,7 @@ import time
 import traceback
 import ffmpeg
 import tqdm
-from pytube import YouTube, Search, Playlist
+from pytube import YouTube, Search, Playlist, innertube
 from pytube.exceptions import VideoUnavailable
 from utils import user_allows, enforce_options, print_dict
 
@@ -147,7 +147,7 @@ class YoutubeDownloader:
 
             print(f'  ===  DOWNLOAD COMPLETE  ===  ')
             self.print_video_info()
-            print(f'Saved to "{output_filename}". Time taken: {round(end - start)} seconds')
+            print(f'Saved to "{os.getcwd()}/{output_filename}". Time taken: {round(end - start)} seconds')
 
     def get_playability_status(self):
         p = self.get_vid_info()['playabilityStatus']
@@ -211,6 +211,7 @@ def youtube_downloader_ui():
     simple UI to assist a user in downloading a YouTube video
     :return:
     """
+    innertube._default_clients['ANDROID'] = innertube._default_clients['WEB']  # can remove once pytube has updated
     print('=' * 20 + ' PYTHON HIGH RESOLUTION YOUTUBE DOWNLOADER ' + '=' * 20)
     print('OPTIONS:')
     options = {1: 'download a youtube video with a URL', 2: 'search for a video with a search query',
