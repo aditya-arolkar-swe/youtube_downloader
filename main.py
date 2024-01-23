@@ -91,7 +91,7 @@ class YoutubeDownloader:
 
     def get_title(self):
         # removes any '/'s to not confuse the filename with a new directory in the os outputs
-        return self.yt.title.replace('/', '')
+        return strip_non_ascii(self.yt.title.replace('/', ''))
 
     def get_video_length(self):
         return str(datetime.timedelta(seconds=self.yt.length))
@@ -129,19 +129,20 @@ class YoutubeDownloader:
                                          f'Video resolution ({best_video.resolution}): {best_video} \n '
                                          f'Audio resolution ({best_audio.abr}): {best_audio}'):
             start = time.time()
-            if not os.path.exists('temp'):
-                os.makedirs('temp')
-            audio_filename = f"temp/{self.get_title()}_audio.mp3"
-            video_filename = f"temp/{self.get_title()}_video.mp4"
+            temp_path = os.path.join(os.getcwd(), "temp")
+            if not os.path.exists(temp_path):
+                os.makedirs(temp_path)
+            audio_filename = os.path.join(temp_path, f"{self.get_title()}_audio.mp3")
+            video_filename = os.path.join(temp_path, f"{self.get_title()}_video.mp4")
             best_audio.download(filename=audio_filename)
             best_video.download(filename=video_filename)
             audio = ffmpeg.input(audio_filename)
             video = ffmpeg.input(video_filename)
-            output_dir = f'downloads/{output_dir}' if output_dir else 'downloads'
+            output_dir = os.path.join('downloads', output_dir) if output_dir else 'downloads'
+            output_dir = os.path.join(os.getcwd(), output_dir)
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            output_filename = f"{output_dir}/{self.get_title()}.mp4"
-            output_filename = ''.join(char for char in output_filename if ord(char) < 128)
+            output_filename = os.path.join(output_dir, f"{self.get_title()}.mp4")
             ffmpeg.output(audio, video, output_filename).run(overwrite_output=True)
             end = time.time()
 
@@ -153,6 +154,9 @@ class YoutubeDownloader:
         p = self.get_vid_info()['playabilityStatus']
         return {'status': p['status'], 'reason': p['reason'], 'reasonTitle': p['reasonTitle']}
 
+def strip_non_ascii(string: str) -> str:
+    # Strips out any characters that aren't ascii
+    return''.join(char for char in string if ord(char) < 128)
 
 class YoutubePlaylistDownloader:
     """
