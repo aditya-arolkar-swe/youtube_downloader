@@ -91,7 +91,7 @@ class YoutubeDownloader:
 
     def get_title(self):
         # removes any '/'s to not confuse the filename with a new directory in the os outputs
-        return self.yt.title.replace('/', '')
+        return strip_non_ascii(self.yt.title.replace('/', ''))
 
     def get_video_length(self):
         return str(datetime.timedelta(seconds=self.yt.length))
@@ -119,40 +119,51 @@ class YoutubeDownloader:
                     print('Traceback: ', traceback.format_exc())
                 succeeded = False
 
-    def download_best_resolution(self, force_download: bool = False, output_dir: str = None):
+    def download_best_resolution(self, force_download: bool = False, output_dir: str = None, sound_only: bool = False):
         # query audio and video stream, then merge them with ffmpeg
         self.print_video_info()
         best_audio = self.get_best_audio()
         best_video = self.get_best_video()
 
-        if force_download or user_allows(f'Would you like to download this stream for "{self.get_title()}"?\n '
-                                         f'Video resolution ({best_video.resolution}): {best_video} \n '
-                                         f'Audio resolution ({best_audio.abr}): {best_audio}'):
+        prompt = f'Would you like to download this stream for "{self.get_title()}"?\n'
+        if not sound_only:
+            prompt += f' Video resolution ({best_video.resolution}): {best_video} \n'
+        prompt += f' Audio resolution ({best_audio.abr}): {best_audio}'
+
+        if force_download or user_allows(prompt):
             start = time.time()
-            if not os.path.exists('temp'):
-                os.makedirs('temp')
-            audio_filename = f"temp/{self.get_title()}_audio.mp3"
-            video_filename = f"temp/{self.get_title()}_video.mp4"
-            best_audio.download(filename=audio_filename)
-            best_video.download(filename=video_filename)
-            audio = ffmpeg.input(audio_filename)
-            video = ffmpeg.input(video_filename)
-            output_dir = f'downloads/{output_dir}' if output_dir else 'downloads'
+            output_dir = os.path.join('downloads', output_dir) if output_dir else 'downloads'
+            output_dir = os.path.join(os.getcwd(), output_dir)
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            output_filename = f"{output_dir}/{self.get_title()}.mp4"
-            output_filename = ''.join(char for char in output_filename if ord(char) < 128)
-            ffmpeg.output(audio, video, output_filename).run(overwrite_output=True)
+            if sound_only:
+                output_filename = os.path.join(output_dir, f"{self.get_title()}.mp3")
+                best_audio.download(filename=output_filename)
+            else:
+                temp_path = os.path.join(os.getcwd(), "temp")
+                if not os.path.exists(temp_path):
+                    os.makedirs(temp_path)
+                audio_filename = os.path.join(temp_path, f"{self.get_title()}_audio.mp3")
+                video_filename = os.path.join(temp_path, f"{self.get_title()}_video.mp4")
+                best_audio.download(filename=audio_filename)
+                best_video.download(filename=video_filename)
+                audio = ffmpeg.input(audio_filename)
+                video = ffmpeg.input(video_filename)
+                output_filename = os.path.join(output_dir, f"{self.get_title()}.mp4")
+                ffmpeg.output(audio, video, output_filename).run(overwrite_output=True)
             end = time.time()
 
             print(f'  ===  DOWNLOAD COMPLETE  ===  ')
             self.print_video_info()
-            print(f'Saved to "{os.getcwd()}/{output_filename}". Time taken: {round(end - start)} seconds')
+            print(f'Saved to "{os.path.join(os.getcwd(), output_filename)}". Time taken: {round(end - start)} seconds')
 
     def get_playability_status(self):
         p = self.get_vid_info()['playabilityStatus']
         return {'status': p['status'], 'reason': p['reason'], 'reasonTitle': p['reasonTitle']}
 
+def strip_non_ascii(string: str) -> str:
+    # Strips out any characters that aren't ascii
+    return''.join(char for char in string if ord(char) < 128)
 
 class YoutubePlaylistDownloader:
     """
@@ -164,7 +175,7 @@ class YoutubePlaylistDownloader:
         self.playlist = Playlist(url)
         print(f'Loaded playlist "{self.playlist.title}" which has {len(self.playlist)} videos!')
 
-    def download(self):
+    def download(self, sound_only: bool = False):
         video_to_downloader = {}
         for i, video in enumerate(self.playlist):
             yd = YoutubeDownloader(video)
@@ -193,7 +204,7 @@ class YoutubePlaylistDownloader:
         for video_info in tqdm.tqdm(final_chosen):
             yd = video_info['downloader']
             try:
-                yd.download_best_resolution(force_download=True, output_dir=self.playlist.title)
+                yd.download_best_resolution(force_download=True, output_dir=self.playlist.title, sound_only=sound_only)
             except Exception as e:
                 print(f' [ERROR] {e}. failed to download "{yd.get_title()}" with traceback: ')
                 print(traceback.format_exc())
@@ -201,6 +212,8 @@ class YoutubePlaylistDownloader:
 
 def clear_cache(cache_dir: str = 'temp'):
     # clearing temporary cache of separate audio and video files
+    if not os.path.exists(cache_dir):
+        return
     for f in os.listdir(cache_dir):
         os.remove(os.path.join(cache_dir, f))
     os.rmdir(cache_dir)
@@ -220,15 +233,17 @@ def youtube_downloader_ui():
 
     user_input = int(enforce_options([str(k) for k in options.keys()]))
 
+    sound_only =  user_allows(f'Would you like to download sound only?')
+
     if user_input == 1:
         yd = YoutubeDownloader()
-        yd.download_best_resolution()
+        yd.download_best_resolution(sound_only=sound_only)
     elif user_input == 2:
         yd = YoutubeDownloader(search_mode=True)
-        yd.download_best_resolution()
+        yd.download_best_resolution(sound_only=sound_only)
     elif user_input == 3:
         ypd = YoutubePlaylistDownloader()
-        ypd.download()
+        ypd.download(sound_only=sound_only)
 
     clear_cache()
 
