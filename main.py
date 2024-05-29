@@ -8,6 +8,8 @@ import os
 import sys
 import time
 import traceback
+
+import argparse
 import ffmpeg
 import tqdm
 from pytube import YouTube, Search, Playlist, innertube
@@ -219,34 +221,46 @@ def clear_cache(cache_dir: str = 'temp'):
     os.rmdir(cache_dir)
 
 
-def youtube_downloader_ui():
+def youtube_downloader_ui(url: str = None, audio_only: bool = False):
     """
     simple UI to assist a user in downloading a YouTube video
     :return:
     """
     innertube._default_clients['ANDROID'] = innertube._default_clients['WEB']  # can remove once pytube has updated
     print('=' * 20 + ' PYTHON HIGH RESOLUTION YOUTUBE DOWNLOADER ' + '=' * 20)
-    print('OPTIONS:')
-    options = {1: 'download a youtube video with a URL', 2: 'search for a video with a search query',
-               3: 'download all or some videos in a playlist from a playlist URL'}
-    print_dict(options)
 
-    user_input = int(enforce_options([str(k) for k in options.keys()]))
+    if url is not None:
+        yd = YoutubeDownloader(url=url)
+        yd.download_best_resolution(sound_only=audio_only)
 
-    sound_only =  user_allows(f'Would you like to download sound only?')
+    else:
+        print('OPTIONS:')
+        options = {1: 'download a youtube video with a URL', 2: 'search for a video with a search query',
+                   3: 'download all or some videos in a playlist from a playlist URL'}
+        print_dict(options)
 
-    if user_input == 1:
-        yd = YoutubeDownloader()
-        yd.download_best_resolution(sound_only=sound_only)
-    elif user_input == 2:
-        yd = YoutubeDownloader(search_mode=True)
-        yd.download_best_resolution(sound_only=sound_only)
-    elif user_input == 3:
-        ypd = YoutubePlaylistDownloader()
-        ypd.download(sound_only=sound_only)
+        user_input = int(enforce_options([str(k) for k in options.keys()]))
+
+        sound_only = audio_only or user_allows(f'Would you like to download sound only?')
+
+        if user_input == 3:
+            ypd = YoutubePlaylistDownloader()
+            ypd.download(sound_only=sound_only)
+
+        else:
+            yd = YoutubeDownloader(search_mode=user_input == 2)
+            yd.download_best_resolution(sound_only=sound_only)
 
     clear_cache()
 
 
 if __name__ == '__main__':
-    youtube_downloader_ui()
+
+    parser = argparse.ArgumentParser(description='Download full video or audio of youtube videos!')
+
+    parser.add_argument('--url', type=str, default=None)
+    parser.add_argument('--audio', type=bool, default=False)
+
+    args = parser.parse_args()
+
+    youtube_downloader_ui(url=args.url, audio_only=args.audio)
