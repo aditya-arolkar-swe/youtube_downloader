@@ -2,3 +2,5 @@ downloads/
 venv/
 .DS_Store
 main.py
+LICENSE
+*pycache*
