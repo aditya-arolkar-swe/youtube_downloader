@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "youtube-downloader"   # PyPI name (can use dash, import uses underscore)
+version = "0.0.1"
+description = "A simple YouTube video/audio downloader with CLI support"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Aditya Arolkar", email = "aditya.arolkar@berkeley.edu" }]
+requires-python = ">=3.8"
+dependencies = [
+    "pytube",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/youtube_downloader"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+youtube-downloader = "youtube_downloader.ui.cli:main"
